@@ -3,7 +3,6 @@ import { Bot, Sparkles } from "lucide-react";
 
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 function ChatWindow({ messages = [], loading, onSend }) {
   const bottomRef = useRef(null);
@@ -30,7 +29,7 @@ function ChatWindow({ messages = [], loading, onSend }) {
       </header>
 
       {/* Messages */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-4">
           {messages.length === 0 ? (
             <div className="min-h-[65vh] flex flex-col items-center justify-center text-center">
@@ -75,7 +74,7 @@ function ChatWindow({ messages = [], loading, onSend }) {
 
           <div ref={bottomRef} />
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Message input */}
       <div className="shrink-0 pt-3">
