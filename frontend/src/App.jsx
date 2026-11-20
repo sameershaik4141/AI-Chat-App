@@ -1,146 +1,204 @@
+import { useEffect, useState } from "react";
 
-import { useState } from "react";
-import { Send, Bot, User, Plus, MessageSquare } from "lucide-react";
-import "./App.css";
+import Sidebar from "./components/chat/Sidebar";
+import ChatWindow from "./components/chat/ChatWindow";
+
+const API_URL = "http://localhost:5000/api/chat";
+
+function loadConversations() {
+  try {
+    const saved = localStorage.getItem("ai-chat-conversations");
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
+}
 
 function App() {
-  const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [conversations, setConversations] = useState(loadConversations);
+  const [activeChatId, setActiveChatId] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
-  const sendMessage = async (e) => {
-    e.preventDefault();
+  // Save conversations in browser storage
+  useEffect(() => {
+    localStorage.setItem(
+      "ai-chat-conversations",
+      JSON.stringify(conversations)
+    );
+  }, [conversations]);
 
-    if (!message.trim() || loading) return;
+  // Get currently selected conversation
+  const activeChat = conversations.find((chat) => chat.id === activeChatId);
 
-    const userMessage = message.trim();
+  const messages = activeChat?.messages || [];
 
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: userMessage },
-    ]);
+  // Create a new conversation
+  const handleNewChat = () => {
+    const newChat = {
+      id: Date.now().toString(),
+      title: "New chat",
+      messages: [],
+    };
 
-    setMessage("");
+    setConversations((prev) => [newChat, ...prev]);
+    setActiveChatId(newChat.id);
+  };
+
+  // Send message to backend
+  const handleSendMessage = async (content) => {
+    if (!content.trim() || loading) return;
+
+    const chatId = activeChatId || Date.now().toString();
+
+    if (!activeChatId) {
+      setActiveChatId(chatId);
+    }
+
+    const userMessage = {
+      id: `${Date.now()}-user`,
+      role: "user",
+      content,
+    };
+
+    setConversations((prev) => {
+      const existingChat = prev.find((chat) => chat.id === chatId);
+
+      if (existingChat) {
+        return prev.map((chat) =>
+          chat.id === chatId
+            ? {
+                ...chat,
+                title:
+                  chat.title === "New chat" ? content.slice(0, 35) : chat.title,
+                messages: [...chat.messages, userMessage],
+              }
+            : chat
+        );
+      }
+
+      return [
+        {
+          id: chatId,
+          title: content.slice(0, 35),
+          messages: [userMessage],
+        },
+        ...prev,
+      ];
+    });
+
     setLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/chat", {
+      const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({ message: content }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Something went wrong");
+        throw new Error(data.error || "Failed to get AI response.");
       }
 
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.reply },
-      ]);
+      const assistantMessage = {
+        id: `${Date.now()}-assistant`,
+        role: "assistant",
+        content: data.reply,
+      };
+
+      setConversations((prev) =>
+        prev.map((chat) =>
+          chat.id === chatId
+            ? {
+                ...chat,
+                messages: [...chat.messages, assistantMessage],
+              }
+            : chat
+        )
+      );
     } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${error.message}` },
-      ]);
+      const errorMessage = {
+        id: `${Date.now()}-error`,
+        role: "assistant",
+        content: `Sorry, something went wrong: ${error.message}`,
+      };
+
+      setConversations((prev) =>
+        prev.map((chat) =>
+          chat.id === chatId
+            ? {
+                ...chat,
+                messages: [...chat.messages, errorMessage],
+              }
+            : chat
+        )
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // Delete conversation
+  const handleDeleteChat = (chatId) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this conversation?"
+    );
+
+    if (!confirmed) return;
+
+    setConversations((prev) => prev.filter((chat) => chat.id !== chatId));
+
+    if (activeChatId === chatId) {
+      setActiveChatId(null);
+    }
+  };
+
+  // Rename conversation
+  const handleRenameChat = (chatId) => {
+    const chat = conversations.find((item) => item.id === chatId);
+
+    if (!chat) return;
+
+    const newTitle = window.prompt(
+      "Enter a new conversation name:",
+      chat.title
+    );
+
+    if (!newTitle?.trim()) return;
+
+    setConversations((prev) =>
+      prev.map((item) =>
+        item.id === chatId ? { ...item, title: newTitle.trim() } : item
+      )
+    );
+  };
+
   return (
-    <div className="app-container">
-      <aside className="sidebar">
-        <h2>AI Chat</h2>
+    <div className="flex h-screen w-full overflow-hidden bg-[#212121] text-white">
+      {/* Sidebar */}
+      <div className="hidden md:block shrink-0">
+        <Sidebar
+          conversations={conversations}
+          activeChatId={activeChatId}
+          onNewChat={handleNewChat}
+          onSelectChat={setActiveChatId}
+          onDeleteChat={handleDeleteChat}
+          onRenameChat={handleRenameChat}
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((prev) => !prev)}
+        />
+      </div>
 
-        <button className="new-chat">
-          <Plus size={18} />
-          New Chat
-        </button>
-
-        <div className="sidebar-history">
-          <MessageSquare size={18} />
-          <span>Chat History</span>
-        </div>
-
-        <p className="sidebar-footer">Powered by FreeLLMAPI</p>
-      </aside>
-
-      <main className="chat-container">
-        <header className="chat-header">
-          <h3>AI Assistant</h3>
-          <span className="status">● Online</span>
-        </header>
-
-        <section className="messages-container">
-          {messages.length === 0 ? (
-            <div className="welcome-screen">
-              <Bot size={48} />
-              <h1>How can I help you today?</h1>
-              <p>Ask me anything. I'm ready to assist you.</p>
-            </div>
-          ) : (
-            messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`message ${msg.role}`}
-              >
-                <div className="message-icon">
-                  {msg.role === "user" ? (
-                    <User size={20} />
-                  ) : (
-                    <Bot size={20} />
-                  )}
-                </div>
-
-                <div className="message-content">
-                  <strong>
-                    {msg.role === "user" ? "You" : "AI Assistant"}
-                  </strong>
-                  <p>{msg.content}</p>
-                </div>
-              </div>
-            ))
-          )}
-
-          {loading && (
-            <div className="message assistant">
-              <div className="message-icon">
-                <Bot size={20} />
-              </div>
-              <div className="message-content">
-                <strong>AI Assistant</strong>
-                <p className="typing">Thinking...</p>
-              </div>
-            </div>
-          )}
-        </section>
-
-        <form className="input-container" onSubmit={sendMessage}>
-          <input
-            type="text"
-            placeholder="Message AI Assistant..."
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            disabled={loading}
-          />
-
-          <button
-            type="submit"
-            disabled={!message.trim() || loading}
-          >
-            <Send size={20} />
-          </button>
-        </form>
-
-        <p className="disclaimer">
-          AI can make mistakes. Verify important information.
-        </p>
-      </main>
+      {/* Main Chat Window */}
+      <ChatWindow
+        messages={messages}
+        loading={loading}
+        onSend={handleSendMessage}
+      />
     </div>
   );
 }
